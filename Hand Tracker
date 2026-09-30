@@ -1,0 +1,96 @@
+"""
+made this into its own file so i can just import HandTracker whenever i need
+hand tracking instead of copy pasting the same mediapipe setup into every
+single week's file. Weeks 3+ can just do "from hand_tracker import HandTracker"
+
+UPDATED: turns out the old "mp.solutions.hands" way of doing this got
+discontinued by google back in 2023 (they call it a "Legacy Solution").
+it still sort of exists in newer mediapipe versions but its unsupported,
+which is exactly why it was hanging forever with zero error -- it was
+trying to run using something that doesnt properly work anymore.
+switched this over to their new supported "Tasks" API instead.
+"""
+
+import os
+import urllib.request
+import math
+
+import cv2
+import mediapipe as mp
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision as mp_vision
+
+# this is the actual hand-detection model file, provided by google.
+# it doesnt come bundled with the mediapipe package anymore (thats part of
+# why the old code broke) so we download it once and reuse the saved copy
+_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"
+_MODEL_PATH = "hand_landmarker.task"
+
+
+class HandTracker:
+    def __init__(self, max_hands=1, detection_confidence=0.7, tracking_confidence=0.7):
+        self._ensure_model_downloaded()
+
+        base_options = mp_python.BaseOptions(model_asset_path=_MODEL_PATH)
+        options = mp_vision.HandLandmarkerOptions(
+            base_options=base_options,
+            num_hands=max_hands,
+            min_hand_detection_confidence=detection_confidence,
+            min_tracking_confidence=tracking_confidence,
+            running_mode=mp_vision.RunningMode.VIDEO,
+        )
+        self.detector = mp_vision.HandLandmarker.create_from_options(options)
+
+        self.results = None
+        self._frame_timestamp_ms = 0
+
+        # landmark index numbers so i dont have to remember them every time
+        self.WRIST = 0
+        self.THUMB_TIP = 4
+        self.INDEX_TIP = 8
+        self.MIDDLE_TIP = 12
+        self.RING_TIP = 16
+        self.PINKY_TIP = 20
+
+    def _ensure_model_downloaded(self):
+        # only downloads the first time you ever run this -- after that
+        # the .task file just sits next to this script and gets reused
+        if not os.path.exists(_MODEL_PATH):
+            print("Downloading hand landmark model (first run only, ~10MB)...")
+            urllib.request.urlretrieve(_MODEL_URL, _MODEL_PATH)
+            print("Model downloaded.")
+
+    def find_hands(self, frame, draw=True):
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+        # the new API wants an increasing timestamp per frame instead of
+        # just calling process() like the old one did
+        self._frame_timestamp_ms += 33  # roughly one frame at 30fps
+        self.results = self.detector.detect_for_video(mp_image, self._frame_timestamp_ms)
+
+        if draw and self.results.hand_landmarks:
+            h, w, _ = frame.shape
+            for hand_landmarks in self.results.hand_landmarks:
+                # simple dots for each of the 21 points -- the new api
+                # doesnt hand us the same ready made "draw connections"
+                # helper the old solutions api did, so keeping it simple
+                for lm in hand_landmarks:
+                    cx, cy = int(lm.x * w), int(lm.y * h)
+                    cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
+
+        return frame
+
+    def get_landmark_position(self, frame, landmark_id, hand_index=0):
+        if not self.results or not self.results.hand_landmarks:
+            return None
+        if hand_index >= len(self.results.hand_landmarks):
+            return None
+
+        h, w, _ = frame.shape
+        landmark = self.results.hand_landmarks[hand_index][landmark_id]
+        return int(landmark.x * w), int(landmark.y * h)
+
+    def get_distance(self, p1, p2):
+        # regular distance formula (pythagorean theorem)
+        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
