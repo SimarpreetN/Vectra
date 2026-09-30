@@ -1,0 +1,94 @@
+""" Week 2 of my Camera tracking movement idea
+same goal as before (track my hand, get the 21 landmarks, print index finger
+position, check thumb+index distance for a pinch) but now using my HandTracker
+class from hand_tracker.py instead of writing all the mediapipe stuff directly
+in here. keeps this file focused on "what week 2 is actually doing" instead of
+mixed in with setup code
+"""
+#Big delay on week 2 due to all the issues of me running into week 1, this was more client sided and not a problem for the code itself so no need to worry about it
+import cv2
+from hand_tracker import HandTracker
+
+# side note: cv2 gave me SO much trouble importing last week, kept saying
+# "No module named cv2" even after i thought i installed it
+# basically it always failed to import cv2 but the problem was that i wasnt in a venv and i had multiple python versions installed, so it was installing to one version but running the code in another. once i got into the right venv it worked fine. also had to install opencv-contrib-python for some reason, not sure why but that fixed it too.
+# this caused a massive delay in creating week 2, so im leaving this note here in case i ever forget how to fix it again
+# so this weeks plan is to use hand tracker and get the position of my fingers 
+# and with it finding the coordinates of my fingers, it will mainly look at my index and thumb which will create my pinch function
+
+#BIG DISCLAIMER
+#This project is me learning how to use mediapipe and opencv, so if you are looking for a more professional and optimized version of this project, please check out the original creator of mediapipe, google. I am just learning how to use it and this is my personal project to learn how to use it. I am not a professional and this is not a professional project. This is just me learning how to use mediapipe and opencv.
+#I am taking inspiration from other projects and tutorials, and I am using their functions/ideas to actually learn
+#This project is meant for me to learn and nothing else
+#Please do not think I made this code fully by myself, I am just learning and creating new ideas
+#I am using AI to LEARN how to use this and other qualities I could use to learn and improve my code
+
+
+
+def main():
+    camera_index = 0
+    # keeping CAP_DSHOW from week 1 since my camera needs it or it just crashes
+    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)
+
+    if not cap.isOpened():
+        print("Error: Web cam cannot be opened")
+        print("check if it is connected")
+        return
+#creating a window and then giving the option to quit window to prevent overload of the camera and to prevent the program from crashing
+    window_name = "Week 2 - Hand Tracking"
+    cv2.namedWindow(window_name)
+    print("Camera opened. Press 'q' in the video window to quit.")
+
+    tracker = HandTracker()
+    failed_read_count = 0
+
+    while True:
+        ret, frame = cap.read()
+
+        if not ret:
+            failed_read_count += 1
+            print("Error: Failed to read frame from webcam")
+            if failed_read_count > 30:
+                print("Too many failed reads in a row. Stopping.")
+                break
+            continue
+        #prevention from week 1 where the camera would overload and crash the program, this will prevent that from happening
+        failed_read_count = 0
+
+        frame = cv2.flip(frame, 1)
+
+        # this one call does the RGB conversion, runs mediapipe, and draws
+        # the skeleton onto the frame -- all the stuff that used to be
+        # written out directly in this file is now hidden inside the class
+        frame = tracker.find_hands(frame)
+
+        index_pos = tracker.get_landmark_position(frame, tracker.INDEX_TIP)
+        thumb_pos = tracker.get_landmark_position(frame, tracker.THUMB_TIP)
+        #this will give the coordinates of the index finger and will draw a circle on the index finger and will also give the distance between the thumb and index finger to detect a pinch
+        if index_pos and thumb_pos:
+            print(f"Index finger coords: {index_pos}")
+
+            cv2.circle(frame, index_pos, 10, (0, 255, 255), -1)
+
+            distance = tracker.get_distance(thumb_pos, index_pos)
+            cv2.putText(frame, f"Pinch dist: {int(distance)}", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+            # if the distance gets small enough im calling that a pinch
+            # gonna have to mess with this number more depending on distance from camera
+            # setting the distacne to 40, might reduce later if it gets too sensitive when i dont mean to actually pinch, QOL improvment 
+            if distance < 40:
+                cv2.putText(frame, "PINCH DETECTED", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+        cv2.imshow(window_name, frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
