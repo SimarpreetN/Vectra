@@ -92,5 +92,14 @@ class HandTracker:
         return int(landmark.x * w), int(landmark.y * h)
 
     def get_distance(self, p1, p2):
+        if not p1 or not p2:
+            return None
         # regular distance formula (pythagorean theorem)
+        return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+    def get_hand_count(self):
+        if not self.results or not self.results.hand_landmarks:
+            return 0
+        return len(self.results.hand_landmarks)
+     # regular distance formula (pythagorean theorem)
         return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
